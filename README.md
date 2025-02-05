@@ -31,15 +31,15 @@ update-interval: 30
 
 # Debug settings
 debug:
-	enabled: false
-	log-updates: false
+  enabled: false
+  log-updates: false
 
 # Leaderboard Types
 leaderboards:
-	mobkills:
-		title: "Top Mob Kills"
-		placeholder: "%statistic_mob_kills%"
-		format: "{position}. {player}: {value} kills"
+  mobkills:
+    title: "Top Mob Kills"
+    placeholder: "%statistic_mob_kills%"
+    format: "{position}. {player}: {value} kills"
 ```
 
 ## Commands
