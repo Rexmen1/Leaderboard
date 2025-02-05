@@ -1,0 +1,17 @@
+name: Leaderboards
+version: 1.0
+main: com.rex.leaderboards.LeaderboardPlugin
+api-version: '1.20'
+depend: [PlaceholderAPI]
+commands:
+  leaderboard:
+    description: Main command for leaderboards
+    aliases: [lb]
+    usage: /leaderboard <type>
+permissions:
+  leaderboards.update:
+    description: Allows updating leaderboards
+    default: op
+  leaderboards.reload:
+    description: Allows reloading the plugin configuration
+    default: op

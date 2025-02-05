@@ -1,0 +1,35 @@
+# Update interval in seconds
+update-interval: 30
+
+# Debug settings
+debug:
+  enabled: false
+  log-updates: false
+
+# GUI Settings
+gui:
+  title: "Leaderboards - {type}"
+  size: 54 # 6 rows
+  navigation:
+    next-page:
+      slot: 50
+      item: ARROW
+      name: "§aNext Page"
+    previous-page:
+      slot: 48
+      item: ARROW
+      name: "§aPrevious Page"
+
+# Leaderboard Types
+leaderboards:
+  mobkills:
+    title: "Top Mob Kills"
+    placeholder: "%statistic_mob_kills%"
+    format: "{position}. {player}: {value} kills"
+  blocks:
+    title: "Top Blocks Mined"
+    placeholder: "%statistic_mine_block%"
+    format: "{position}. {player}: {value} blocks"
+
+
+
