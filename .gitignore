@@ -28,6 +28,9 @@ logs/
 # Runtime data
 data.yml
 
+# Backups
+backups/
+
 # OS files
 .DS_Store
 Thumbs.db
