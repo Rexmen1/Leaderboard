@@ -1,208 +1,226 @@
 package com.rex.leaderboards;
 
-import me.clip.placeholderapi.PlaceholderAPI;
-
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
-import org.bukkit.Statistic;
-import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.entity.Player;
-import org.bukkit.OfflinePlayer;
-import org.bukkit.configuration.ConfigurationSection;
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.Map.Entry;
+import me.clip.placeholderapi.PlaceholderAPI;
+import org.bukkit.Bukkit;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 
 public class LeaderboardManager {
-	private final LeaderboardPlugin plugin;
-	private final Map<String, String> leaderboardPlaceholders;
-	private final Map<String, String> leaderboardTitles;
-	private final File dataFile;
-	private FileConfiguration data;
-	private static final int BATCH_SIZE = 50; // Process 50 players per batch
-	private static final long BATCH_DELAY = 20L; // 1 second delay between batches (20 ticks)
+   private final LeaderboardPlugin plugin;
+   private final Map<String, String> leaderboardPlaceholders;
+   private final Map<String, String> leaderboardTitles;
+   private final File dataFile;
+   private FileConfiguration data;
+   private static final int BATCH_SIZE = 50;
+   private static final long BATCH_DELAY = 20L;
 
-	public LeaderboardManager(LeaderboardPlugin plugin) {
-		this.plugin = plugin;
-		this.leaderboardPlaceholders = new HashMap<>();
-		this.leaderboardTitles = new HashMap<>();
-		this.dataFile = new File(plugin.getDataFolder(), "data.yml");
-		loadLeaderboards();
-		loadData();
-	}
+   public LeaderboardManager(LeaderboardPlugin plugin) {
+      this.plugin = plugin;
+      this.leaderboardPlaceholders = new HashMap();
+      this.leaderboardTitles = new HashMap();
+      this.dataFile = new File(plugin.getDataFolder(), "data.yml");
+      this.loadLeaderboards();
+      this.loadData();
+   }
 
-	private void loadData() {
-		if (!dataFile.exists()) {
-			plugin.saveResource("data.yml", false);
-		}
-		data = YamlConfiguration.loadConfiguration(dataFile);
-	}
+   private void loadData() {
+      if (!this.dataFile.exists()) {
+         this.plugin.saveResource("data.yml", false);
+      }
 
-	private void saveData() {
-		try {
-			data.save(dataFile);
-		} catch (IOException e) {
-			plugin.getLogger().severe("Could not save data file!");
-		}
-	}
+      this.data = YamlConfiguration.loadConfiguration(this.dataFile);
+   }
 
-	private void loadLeaderboards() {
-		ConfigurationSection section = plugin.getConfig().getConfigurationSection("leaderboards");
-		if (section == null) return;
+   private void saveData() {
+      try {
+         this.data.save(this.dataFile);
+      } catch (IOException var2) {
+         this.plugin.getLogger().severe("Could not save data file!");
+      }
 
-		for (String type : section.getKeys(false)) {
-			String placeholder = section.getString(type + ".placeholder");
-			String title = section.getString(type + ".title", type);
-			if (placeholder != null) {
-				leaderboardPlaceholders.put(type, placeholder);
-				leaderboardTitles.put(type, title);
-			}
-		}
-	}
+   }
 
-	private void debug(String message) {
-		if (plugin.getConfig().getBoolean("debug.enabled", false) && 
-			plugin.getConfig().getBoolean("debug.log-updates", false)) {
-			plugin.getLogger().info(message);
-		}
-	}
+   private void loadLeaderboards() {
+      ConfigurationSection section = this.plugin.getConfig().getConfigurationSection("leaderboards");
+      if (section != null) {
+         Iterator var2 = section.getKeys(false).iterator();
 
-	public void updateLeaderboard(String type, UpdateCallback callback) {
-		if (!leaderboardPlaceholders.containsKey(type)) {
-			if (callback != null) callback.onComplete();
-			return;
-		}
+         while(var2.hasNext()) {
+            String type = (String)var2.next();
+            String placeholder = section.getString(type + ".placeholder");
+            String title = section.getString(type + ".title", type);
+            if (placeholder != null) {
+               this.leaderboardPlaceholders.put(type, placeholder);
+               this.leaderboardTitles.put(type, title);
+            }
+         }
 
-		String placeholder = leaderboardPlaceholders.get(type);
-		ConfigurationSection typeSection = data.getConfigurationSection(type);
-		if (typeSection == null) {
-			typeSection = data.createSection(type);
-		}
+      }
+   }
 
-		final ConfigurationSection finalSection = typeSection;
-		Map<String, Double> existingValues = new HashMap<>();
+   private void debug(String message) {
+      if (this.plugin.getConfig().getBoolean("debug.enabled", false) && this.plugin.getConfig().getBoolean("debug.log-updates", false)) {
+         this.plugin.getLogger().info(message);
+      }
 
-		// Keep existing data
-		for (String playerName : finalSection.getKeys(false)) {
-			if (!playerName.equals("last_update")) {
-				existingValues.put(playerName, finalSection.getDouble(playerName));
-			}
-		}
+   }
 
-		// Update online players
-		Map<String, Double> newValues = new HashMap<>();
-		for (Player player : Bukkit.getOnlinePlayers()) {
-			try {
-				String result = PlaceholderAPI.setPlaceholders(player, placeholder);
-				try {
-					double value = Double.parseDouble(result);
-					if (value > 0) {
-						newValues.put(player.getName(), value);
-						debug("Updated " + type + " for " + player.getName() + ": " + value);
-					}
-				} catch (NumberFormatException ignored) {
-					debug("Failed to parse value for " + player.getName() + " with placeholder " + placeholder);
-				}
-			} catch (Exception e) {
-				debug("Error processing stats for " + player.getName() + ": " + e.getMessage());
-			}
-		}
+   public void updateLeaderboard(String type, UpdateCallback callback) {
+      if (!this.leaderboardPlaceholders.containsKey(type)) {
+         if (callback != null) {
+            callback.onComplete();
+         }
 
-		// Update all values at once
-		for (Map.Entry<String, Double> entry : newValues.entrySet()) {
-			finalSection.set(entry.getKey(), entry.getValue());
-		}
+      } else {
+         String placeholder = (String)this.leaderboardPlaceholders.get(type);
+         ConfigurationSection typeSection = this.data.getConfigurationSection(type);
+         if (typeSection == null) {
+            typeSection = this.data.createSection(type);
+         }
 
-		// Store last update time
-		finalSection.set("last_update", System.currentTimeMillis());
+         ConfigurationSection finalSection = typeSection;
+         Map<String, Double> existingValues = new HashMap();
+         Iterator var7 = typeSection.getKeys(false).iterator();
 
-		// Save data
-		saveData();
+         while(var7.hasNext()) {
+            String playerName = (String)var7.next();
+            if (!playerName.equals("last_update")) {
+               existingValues.put(playerName, finalSection.getDouble(playerName));
+            }
+         }
 
-		if (callback != null) {
-			callback.onComplete();
-		}
-	}
+         Map<String, Double> newValues = new HashMap();
+         Iterator var16 = Bukkit.getOnlinePlayers().iterator();
 
-	public void updateAllLeaderboards(UpdateCallback callback) {
-		// Process each leaderboard type
-		List<String> types = new ArrayList<>(leaderboardPlaceholders.keySet());
-		for (String type : types) {
-			updateLeaderboard(type, null);
-		}
-		if (callback != null) {
-			callback.onComplete();
-		}
-	}
+         while(var16.hasNext()) {
+            Player player = (Player)var16.next();
 
-	public List<Map.Entry<String, Double>> getTopPlayers(String type, int limit) {
-		ConfigurationSection typeSection = data.getConfigurationSection(type);
-		if (typeSection == null) return new ArrayList<>();
+            String var10001;
+            try {
+               String result = PlaceholderAPI.setPlaceholders(player, placeholder);
 
-		Map<String, Double> values = new HashMap<>();
-		for (String key : typeSection.getKeys(false)) {
-			if (!key.equals("last_update")) {
-				values.put(key, typeSection.getDouble(key));
-			}
-		}
+               try {
+                  double value = Double.parseDouble(result);
+                  if (value > 0.0D) {
+                     newValues.put(player.getName(), value);
+                     this.debug("Updated " + type + " for " + player.getName() + ": " + value);
+                  }
+               } catch (NumberFormatException var13) {
+                  var10001 = player.getName();
+                  this.debug("Failed to parse value for " + var10001 + " with placeholder " + placeholder);
+               }
+            } catch (Exception var14) {
+               var10001 = player.getName();
+               this.debug("Error processing stats for " + var10001 + ": " + var14.getMessage());
+            }
+         }
 
-		return values.entrySet().stream()
-				.sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-				.limit(limit)
-				.toList();
-	}
+         var16 = newValues.entrySet().iterator();
 
-	public long getLastUpdate(String type) {
-		ConfigurationSection typeSection = data.getConfigurationSection(type);
-		if (typeSection == null) return 0;
-		return typeSection.getLong("last_update", 0);
-	}
+         while(var16.hasNext()) {
+            Entry<String, Double> entry = (Entry)var16.next();
+            finalSection.set((String)entry.getKey(), entry.getValue());
+         }
 
+         finalSection.set("last_update", System.currentTimeMillis());
+         this.saveData();
+         if (callback != null) {
+            callback.onComplete();
+         }
 
+      }
+   }
 
-	public String getTitle(String type) {
-		return leaderboardTitles.getOrDefault(type, type);
-	}
+   public void updateAllLeaderboards(UpdateCallback callback) {
+      List<String> types = new ArrayList(this.leaderboardPlaceholders.keySet());
+      Iterator var3 = types.iterator();
 
-	public boolean exists(String type) {
-		return leaderboardPlaceholders.containsKey(type);
-	}
+      while(var3.hasNext()) {
+         String type = (String)var3.next();
+         this.updateLeaderboard(type, (UpdateCallback)null);
+      }
 
-	public Set<String> getTypes() {
-		return leaderboardPlaceholders.keySet();
-	}
+      if (callback != null) {
+         callback.onComplete();
+      }
 
-	public void reload() {
-		// Backup existing placeholders and titles
-		Map<String, String> oldPlaceholders = new HashMap<>(leaderboardPlaceholders);
-		Map<String, String> oldTitles = new HashMap<>(leaderboardTitles);
-		
-		// Clear and reload configurations
-		leaderboardPlaceholders.clear();
-		leaderboardTitles.clear();
-		loadLeaderboards();
-		
-		// Check for removed leaderboard types
-		Set<String> removedTypes = new HashSet<>(oldPlaceholders.keySet());
-		removedTypes.removeAll(leaderboardPlaceholders.keySet());
-		if (!removedTypes.isEmpty()) {
-			debug("Removed leaderboard types: " + String.join(", ", removedTypes));
-		}
-		
-		// Check for new or modified leaderboard types
-		for (String type : leaderboardPlaceholders.keySet()) {
-			if (!oldPlaceholders.containsKey(type)) {
-				debug("New leaderboard type added: " + type);
-			} else if (!oldPlaceholders.get(type).equals(leaderboardPlaceholders.get(type))) {
-				debug("Modified leaderboard placeholder: " + type);
-			}
-		}
-		
-		debug("Configuration reloaded - Leaderboard data preserved");
-	}
+   }
 
-	public void shutdown() {
-		saveData();
-	}
+   public List<Entry<String, Double>> getTopPlayers(String type, int limit) {
+      ConfigurationSection typeSection = this.data.getConfigurationSection(type);
+      if (typeSection == null) {
+         return new ArrayList();
+      } else {
+         Map<String, Double> values = new HashMap();
+         Iterator var5 = typeSection.getKeys(false).iterator();
+
+         while(var5.hasNext()) {
+            String key = (String)var5.next();
+            if (!key.equals("last_update")) {
+               values.put(key, typeSection.getDouble(key));
+            }
+         }
+
+         return values.entrySet().stream().sorted(Entry.<String, Double>comparingByValue().reversed()).limit((long)limit).toList();
+      }
+   }
+
+   public long getLastUpdate(String type) {
+      ConfigurationSection typeSection = this.data.getConfigurationSection(type);
+      return typeSection == null ? 0L : typeSection.getLong("last_update", 0L);
+   }
+
+   public String getTitle(String type) {
+      return (String)this.leaderboardTitles.getOrDefault(type, type);
+   }
+
+   public boolean exists(String type) {
+      return this.leaderboardPlaceholders.containsKey(type);
+   }
+
+   public Set<String> getTypes() {
+      return this.leaderboardPlaceholders.keySet();
+   }
+
+   public void reload() {
+      Map<String, String> oldPlaceholders = new HashMap(this.leaderboardPlaceholders);
+      new HashMap(this.leaderboardTitles);
+      this.leaderboardPlaceholders.clear();
+      this.leaderboardTitles.clear();
+      this.loadLeaderboards();
+      Set<String> removedTypes = new HashSet(oldPlaceholders.keySet());
+      removedTypes.removeAll(this.leaderboardPlaceholders.keySet());
+      if (!removedTypes.isEmpty()) {
+         this.debug("Removed leaderboard types: " + String.join(", ", removedTypes));
+      }
+
+      Iterator var4 = this.leaderboardPlaceholders.keySet().iterator();
+
+      while(var4.hasNext()) {
+         String type = (String)var4.next();
+         if (!oldPlaceholders.containsKey(type)) {
+            this.debug("New leaderboard type added: " + type);
+         } else if (!((String)oldPlaceholders.get(type)).equals(this.leaderboardPlaceholders.get(type))) {
+            this.debug("Modified leaderboard placeholder: " + type);
+         }
+      }
+
+      this.debug("Configuration reloaded - Leaderboard data preserved");
+   }
+
+   public void shutdown() {
+      this.saveData();
+   }
 }

@@ -1,12 +1,13 @@
 name: Leaderboards
 version: 1.0
+author: Rex
 main: com.rex.leaderboards.LeaderboardPlugin
 api-version: '1.20'
-depend: [PlaceholderAPI]
+depend: [ PlaceholderAPI ]
 commands:
   leaderboard:
     description: Main command for leaderboards
-    aliases: [lb]
+    aliases: [ lb ]
     usage: /leaderboard <type>
 permissions:
   leaderboards.update:

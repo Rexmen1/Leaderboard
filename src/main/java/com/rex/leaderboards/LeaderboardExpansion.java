@@ -1,71 +1,63 @@
 package com.rex.leaderboards;
 
+import java.util.List;
+import java.util.Map.Entry;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.OfflinePlayer;
-import java.util.List;
-import java.util.Map;
 
 public class LeaderboardExpansion extends PlaceholderExpansion {
-	private final LeaderboardPlugin plugin;
+   private final LeaderboardPlugin plugin;
 
-	public LeaderboardExpansion(LeaderboardPlugin plugin) {
-		this.plugin = plugin;
-	}
+   public LeaderboardExpansion(LeaderboardPlugin plugin) {
+      this.plugin = plugin;
+   }
 
-	@Override
-	public String getIdentifier() {
-		return "leaderboard";
-	}
+   public String getIdentifier() {
+      return "leaderboard";
+   }
 
-	@Override
-	public String getAuthor() {
-		return plugin.getDescription().getAuthors().get(0);
-	}
+   public String getAuthor() {
+      return (String)this.plugin.getDescription().getAuthors().get(0);
+   }
 
-	@Override
-	public String getVersion() {
-		return plugin.getDescription().getVersion();
-	}
+   public String getVersion() {
+      return this.plugin.getDescription().getVersion();
+   }
 
-	@Override
-	public boolean persist() {
-		return true;
-	}
+   public boolean persist() {
+      return true;
+   }
 
-	@Override
-	public String onRequest(OfflinePlayer player, String params) {
-		String[] args = params.split("_");
-		if (args.length != 3) return null;
+   public String onRequest(OfflinePlayer player, String params) {
+      String[] args = params.split("_");
+      if (args.length != 3) {
+         return null;
+      } else {
+         String requestType = args[0];
+         String type = args[1];
 
-		String requestType = args[0]; // name or value
-		String type = args[1]; // leaderboard type
-		int position;
+         int position;
+         try {
+            position = Integer.parseInt(args[2]) - 1;
+         } catch (NumberFormatException var9) {
+            return null;
+         }
 
-		try {
-			position = Integer.parseInt(args[2]) - 1; // Convert to 0-based index
-		} catch (NumberFormatException e) {
-			return null;
-		}
-
-		if (!plugin.getLeaderboardManager().exists(type)) {
-			return null;
-		}
-
-		List<Map.Entry<String, Double>> topPlayers = 
-			plugin.getLeaderboardManager().getTopPlayers(type, position + 1);
-
-		if (position >= topPlayers.size()) {
-			return "N/A";
-		}
-
-		Map.Entry<String, Double> entry = topPlayers.get(position);
-		
-		if (requestType.equals("name")) {
-			return entry.getKey();
-		} else if (requestType.equals("value")) {
-			return String.valueOf(entry.getValue());
-		}
-
-		return null;
-	}
+         if (!this.plugin.getLeaderboardManager().exists(type)) {
+            return null;
+         } else {
+            List<Entry<String, Double>> topPlayers = this.plugin.getLeaderboardManager().getTopPlayers(type, position + 1);
+            if (position >= topPlayers.size()) {
+               return "N/A";
+            } else {
+               Entry<String, Double> entry = (Entry)topPlayers.get(position);
+               if (requestType.equals("name")) {
+                  return (String)entry.getKey();
+               } else {
+                  return requestType.equals("value") ? String.valueOf(entry.getValue()) : null;
+               }
+            }
+         }
+      }
+   }
 }
