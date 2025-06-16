@@ -10,6 +10,8 @@ A Minecraft Spigot/Paper plugin that displays player leaderboards using Placehol
 - Paginated GUI with navigation
 - Automatic periodic updates
 - Admin commands for manual updates and configuration reload
+- **Player head texture caching** - Shows custom skins for offline players
+- Automatic texture cache management with configurable expiry
 
 ## Dependencies
 
@@ -36,6 +38,13 @@ update-interval: 30
 debug:
   enabled: false
   log-updates: false
+  log-texture-cache: false
+
+# Texture Cache Settings
+texture-cache:
+  enabled: true
+  expiry-days: 7 # How many days to keep cached textures
+  max-size: 1000 # Maximum number of player textures to cache
 
 # GUI Settings
 gui:
@@ -69,6 +78,8 @@ leaderboards:
 - `/leaderboard update <type>` - Manually update a specific leaderboard (requires `leaderboards.update` permission)
 - `/leaderboard update *` - Update all leaderboards (requires `leaderboards.update` permission)
 - `/leaderboard reload` - Reload plugin configuration (requires `leaderboards.reload` permission)
+- `/leaderboard cache` - View texture cache information (requires `leaderboards.reload` permission)
+- `/leaderboard cache clear` - Clear expired texture cache entries (requires `leaderboards.reload` permission)
 
 **Aliases:** `/lb`
 
@@ -86,9 +97,37 @@ The plugin registers placeholders with the identifier `leaderboard`:
 
 Example: `%leaderboard_name_mobkills_1%` gets the top player's name in the mob kills leaderboard.
 
+## Player Head Texture Caching
+
+The plugin features an intelligent texture caching system that ensures all players show their custom skins in leaderboards, even when offline:
+
+### How it works:
+
+1. **Online Player Detection**: When players are online, their textures are automatically cached
+2. **Offline Display**: When players go offline, their cached textures are used instead of the default Steve skin
+3. **Automatic Updates**: Player textures are refreshed whenever they come online
+4. **Cache Management**: Old textures are automatically cleaned up based on configurable expiry settings
+
+### Configuration:
+
+```yaml
+texture-cache:
+  enabled: true # Enable/disable texture caching
+  expiry-days: 7 # Keep textures for 7 days
+  max-size: 1000 # Maximum cached textures
+```
+
+### Benefits:
+
+- **Better User Experience**: All players show their custom skins
+- **Performance Optimized**: No blocking API calls for offline players
+- **Server Friendly**: Configurable cache limits prevent memory issues
+- **Automatic Management**: Self-cleaning cache with expiry system
+
 ## Building from Source
 
 Requirements:
+
 - Java 17+
 - Maven 3.6+
 
@@ -113,6 +152,7 @@ This is a reconstructed version of a decompiled plugin with the following fixes:
 4. **Added proper Maven project structure** for easy building and dependency management
 5. **Added missing `reloadConfiguration()` method** in the main plugin class
 6. **Improved error handling** in GUI navigation and placeholder parsing
+7. **NEW: Player texture caching system** - Shows custom skins for offline players without server performance impact
 
 ## License
 

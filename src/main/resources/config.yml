@@ -5,6 +5,13 @@ update-interval: 30
 debug:
   enabled: false
   log-updates: false
+  log-texture-cache: false
+
+# Texture Cache Settings
+texture-cache:
+  enabled: true
+  expiry-days: 7 # How many days to keep cached textures
+  max-size: 1000 # Maximum number of player textures to cache
 
 # GUI Settings
 gui:

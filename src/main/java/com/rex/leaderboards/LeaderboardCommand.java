@@ -26,7 +26,7 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
 
    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
       if (sender instanceof Player) {
-         Player player = (Player)sender;
+         Player player = (Player) sender;
          if (args.length < 1) {
             this.sendHelp(player);
             return true;
@@ -39,7 +39,23 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
                } else {
                   this.plugin.reloadConfig();
                   manager.reload();
+                  this.plugin.getTextureCache().reload();
                   player.sendMessage("§aConfiguration reloaded successfully!");
+                  return true;
+               }
+            } else if (args[0].equalsIgnoreCase("cache")) {
+               if (!player.hasPermission("leaderboards.reload")) {
+                  player.sendMessage("§cYou don't have permission to view cache info!");
+                  return true;
+               } else {
+                  PlayerTextureCache cache = this.plugin.getTextureCache();
+                  player.sendMessage("§6§lTexture Cache Info:");
+                  player.sendMessage("§7Status: " + (cache.isCacheEnabled() ? "§aEnabled" : "§cDisabled"));
+                  player.sendMessage("§7Cached textures: §f" + cache.getCacheSize());
+                  if (args.length > 1 && args[1].equalsIgnoreCase("clear")) {
+                     cache.clearExpiredEntries();
+                     player.sendMessage("§aExpired cache entries cleared!");
+                  }
                   return true;
                }
             } else {
@@ -90,33 +106,33 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
    public void openLeaderboardGUI(Player player, String type, int page) {
       LeaderboardManager manager = this.plugin.getLeaderboardManager();
       int guiSize = this.plugin.getConfig().getInt("gui.size", 54);
-      String title = this.plugin.getConfig().getString("gui.title", "Leaderboards - {type}").replace("{type}", manager.getTitle(type));
+      String title = this.plugin.getConfig().getString("gui.title", "Leaderboards - {type}").replace("{type}",
+            manager.getTitle(type));
       Inventory gui = Bukkit.createInventory(new LeaderboardHolder(), guiSize, title + " - Page " + (page + 1));
       List<Entry<String, Double>> allPlayers = manager.getTopPlayers(type, Integer.MAX_VALUE);
       int itemsPerPage = 45;
-      int totalPages = Math.max(1, (int)Math.ceil((double)allPlayers.size() / (double)itemsPerPage));
+      int totalPages = Math.max(1, (int) Math.ceil((double) allPlayers.size() / (double) itemsPerPage));
       int startIndex = page * itemsPerPage;
       int endIndex = Math.min(startIndex + itemsPerPage, allPlayers.size());
       List<Entry<String, Double>> pageEntries = allPlayers.subList(startIndex, endIndex);
       int slot = 0;
 
       ItemStack skull;
-      for(Iterator var15 = pageEntries.iterator(); var15.hasNext(); gui.setItem(slot++, skull)) {
-         Entry<String, Double> entry = (Entry)var15.next();
+      for (Iterator var15 = pageEntries.iterator(); var15.hasNext(); gui.setItem(slot++, skull)) {
+         Entry<String, Double> entry = (Entry) var15.next();
          skull = new ItemStack(Material.PLAYER_HEAD);
-         SkullMeta meta = (SkullMeta)skull.getItemMeta();
+         SkullMeta meta = (SkullMeta) skull.getItemMeta();
          if (meta != null) {
-            // Use player name only to avoid blocking API calls
-            // Only set owner if player is online to avoid network lookups
-            Player onlinePlayer = Bukkit.getPlayerExact((String)entry.getKey());
-            if (onlinePlayer != null) {
-               meta.setOwningPlayer(onlinePlayer);
-            }
-            
-            meta.setDisplayName("§6#" + (startIndex + slot + 1) + " §f" + (String)entry.getKey());
-            List<String> lore = new ArrayList();
-            String format = this.plugin.getConfig().getString("leaderboards." + type + ".format", "{position}. {player}: {value}");
-            format = format.replace("{position}", String.valueOf(startIndex + slot + 1)).replace("{player}", (CharSequence)entry.getKey()).replace("{value}", String.valueOf(entry.getValue()));
+            // Use texture cache for both online and offline players
+            this.plugin.getTextureCache().applyTextureToSkull(meta, (String) entry.getKey());
+
+            meta.setDisplayName("§6#" + (startIndex + slot + 1) + " §f" + (String) entry.getKey());
+            List<String> lore = new ArrayList<>();
+            String format = this.plugin.getConfig().getString("leaderboards." + type + ".format",
+                  "{position}. {player}: {value}");
+            format = format.replace("{position}", String.valueOf(startIndex + slot + 1))
+                  .replace("{player}", (CharSequence) entry.getKey())
+                  .replace("{value}", String.valueOf(entry.getValue()));
             lore.add("§7" + format);
             meta.setLore(lore);
             skull.setItemMeta(meta);
@@ -126,10 +142,12 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
       ItemStack nextButton;
       ItemMeta nextMeta;
       if (page > 0) {
-         nextButton = new ItemStack(Material.valueOf(this.plugin.getConfig().getString("gui.navigation.previous-page.item", "ARROW")));
+         nextButton = new ItemStack(
+               Material.valueOf(this.plugin.getConfig().getString("gui.navigation.previous-page.item", "ARROW")));
          nextMeta = nextButton.getItemMeta();
          if (nextMeta != null) {
-            nextMeta.setDisplayName(this.plugin.getConfig().getString("gui.navigation.previous-page.name", "§aPrevious Page"));
+            nextMeta.setDisplayName(
+                  this.plugin.getConfig().getString("gui.navigation.previous-page.name", "§aPrevious Page"));
             nextButton.setItemMeta(nextMeta);
          }
 
@@ -137,7 +155,8 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
       }
 
       if (page < totalPages - 1 && !pageEntries.isEmpty()) {
-         nextButton = new ItemStack(Material.valueOf(this.plugin.getConfig().getString("gui.navigation.next-page.item", "ARROW")));
+         nextButton = new ItemStack(
+               Material.valueOf(this.plugin.getConfig().getString("gui.navigation.next-page.item", "ARROW")));
          nextMeta = nextButton.getItemMeta();
          if (nextMeta != null) {
             nextMeta.setDisplayName(this.plugin.getConfig().getString("gui.navigation.next-page.name", "§aNext Page"));
@@ -155,22 +174,22 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
    }
 
    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-      List<String> completions = new ArrayList();
+      List<String> completions = new ArrayList<>();
       if (args.length == 1) {
          completions.addAll(this.plugin.getLeaderboardManager().getTypes());
          if (sender.hasPermission("leaderboards.update")) {
             completions.add("update");
          }
-
          if (sender.hasPermission("leaderboards.reload")) {
             completions.add("reload");
+            completions.add("cache");
          }
       } else if (args.length == 2 && args[0].equalsIgnoreCase("update")) {
          completions.addAll(this.plugin.getLeaderboardManager().getTypes());
          completions.add("*");
       }
 
-      return (List)completions.stream().filter((s) -> {
+      return (List) completions.stream().filter((s) -> {
          return s.toLowerCase().startsWith(args[args.length - 1].toLowerCase());
       }).collect(Collectors.toList());
    }
@@ -184,9 +203,9 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
          player.sendMessage("  §f/leaderboard update <type> §7- Update specific leaderboard");
          player.sendMessage("  §f/leaderboard update * §7- Update all leaderboards");
       }
-
       if (player.hasPermission("leaderboards.reload")) {
          player.sendMessage("  §f/leaderboard reload §7- Reload plugin configuration");
+         player.sendMessage("  §f/leaderboard cache §7- View texture cache info");
       }
 
       player.sendMessage("");
