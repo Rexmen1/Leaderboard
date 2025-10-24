@@ -3,6 +3,7 @@ package com.rex.leaderboards;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
@@ -56,6 +57,14 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
                      cache.clearExpiredEntries();
                      player.sendMessage("§aExpired cache entries cleared!");
                   }
+                  return true;
+               }
+            } else if (args[0].equalsIgnoreCase("migrate")) {
+               if (!player.hasPermission("leaderboards.admin")) {
+                  player.sendMessage("§cYou don't have permission to use migration commands!");
+                  return true;
+               } else {
+                  this.handleMigrationCommand(player, args);
                   return true;
                }
             } else {
@@ -184,9 +193,16 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
             completions.add("reload");
             completions.add("cache");
          }
+         if (sender.hasPermission("leaderboards.admin")) {
+            completions.add("migrate");
+         }
       } else if (args.length == 2 && args[0].equalsIgnoreCase("update")) {
          completions.addAll(this.plugin.getLeaderboardManager().getTypes());
          completions.add("*");
+      } else if (args.length == 2 && args[0].equalsIgnoreCase("migrate")) {
+         completions.add("start");
+         completions.add("status");
+         completions.add("verify");
       }
 
       return (List) completions.stream().filter((s) -> {
@@ -207,10 +223,125 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
          player.sendMessage("  §f/leaderboard reload §7- Reload plugin configuration");
          player.sendMessage("  §f/leaderboard cache §7- View texture cache info");
       }
+      if (player.hasPermission("leaderboards.admin")) {
+         player.sendMessage("  §f/leaderboard migrate status §7- Check migration status");
+         player.sendMessage("  §f/leaderboard migrate start §7- Start YAML to MySQL migration");
+         player.sendMessage("  §f/leaderboard migrate verify §7- Verify migration integrity");
+      }
 
       player.sendMessage("");
       player.sendMessage("§6Available Types:");
       player.sendMessage("  §f" + String.join("§7, §f", this.plugin.getLeaderboardManager().getTypes()));
       player.sendMessage("§8§l§m-------------------------------------------------");
+   }
+
+   private void handleMigrationCommand(Player player, String[] args) {
+      LeaderboardManager manager = this.plugin.getLeaderboardManager();
+      
+      // Check if MySQL is enabled
+      if (!this.plugin.getConfig().getString("storage.type", "yaml").equalsIgnoreCase("mysql")) {
+         player.sendMessage("§cMigration commands are only available when MySQL storage is enabled!");
+         player.sendMessage("§7Please set storage.type to 'mysql' in config.yml and restart the server.");
+         return;
+      }
+      
+      if (args.length < 2) {
+         player.sendMessage("§cUsage: /leaderboard migrate <status|start|verify>");
+         return;
+      }
+      
+      String subCommand = args[1].toLowerCase();
+      
+      switch (subCommand) {
+         case "status":
+            this.handleMigrationStatus(player, manager);
+            break;
+         case "start":
+            this.handleMigrationStart(player, manager);
+            break;
+         case "verify":
+            this.handleMigrationVerify(player, manager);
+            break;
+         default:
+            player.sendMessage("§cUnknown migration command: " + subCommand);
+            player.sendMessage("§7Available commands: status, start, verify");
+            break;
+      }
+   }
+   
+   private void handleMigrationStatus(Player player, LeaderboardManager manager) {
+      player.sendMessage("§6§lMigration Status");
+      player.sendMessage("§7Checking migration status...");
+      
+      DataMigration migration = new DataMigration(this.plugin, manager.getDatabaseManager());
+      migration.getMigrationStats().thenAccept(stats -> {
+         Bukkit.getScheduler().runTask(this.plugin, () -> {
+            if (stats.containsKey("error")) {
+               player.sendMessage("§cError checking migration status: " + stats.get("error"));
+               return;
+            }
+            
+            boolean yamlExists = (Boolean) stats.get("yamlExists");
+            if (!yamlExists) {
+               player.sendMessage("§aNo YAML data file found - nothing to migrate.");
+               return;
+            }
+            
+            int leaderboardTypes = (Integer) stats.get("leaderboardTypes");
+            int yamlRecords = (Integer) stats.get("yamlRecords");
+            int mysqlRecords = (Integer) stats.get("mysqlRecords");
+            boolean migrationNeeded = (Boolean) stats.get("migrationNeeded");
+            
+            player.sendMessage("§7Leaderboard types: §f" + leaderboardTypes);
+            player.sendMessage("§7YAML records: §f" + yamlRecords);
+            player.sendMessage("§7MySQL records: §f" + mysqlRecords);
+            
+            if (migrationNeeded) {
+               player.sendMessage("§e⚠ Migration needed! Use '/leaderboard migrate start' to begin.");
+            } else {
+               player.sendMessage("§a✓ Migration appears complete.");
+            }
+         });
+      });
+   }
+   
+   private void handleMigrationStart(Player player, LeaderboardManager manager) {
+      player.sendMessage("§6§lStarting Migration");
+      player.sendMessage("§7Migrating YAML data to MySQL...");
+      player.sendMessage("§c⚠ This process may take some time for large datasets.");
+      
+      DataMigration migration = new DataMigration(this.plugin, manager.getDatabaseManager());
+      migration.migrateFromYaml().thenAccept(success -> {
+         Bukkit.getScheduler().runTask(this.plugin, () -> {
+            if (success) {
+               player.sendMessage("§a✓ Migration completed successfully!");
+               player.sendMessage("§7Your YAML data has been backed up in the 'backups' folder.");
+               player.sendMessage("§7Use '/leaderboard migrate verify' to verify the migration.");
+            } else {
+               player.sendMessage("§c✗ Migration failed or completed with errors.");
+               player.sendMessage("§7Check the console for detailed error messages.");
+               player.sendMessage("§7Your original data.yml file has been preserved.");
+            }
+         });
+      });
+   }
+   
+   private void handleMigrationVerify(Player player, LeaderboardManager manager) {
+      player.sendMessage("§6§lVerifying Migration");
+      player.sendMessage("§7Verifying data integrity...");
+      
+      DataMigration migration = new DataMigration(this.plugin, manager.getDatabaseManager());
+      migration.verifyMigration().thenAccept(verified -> {
+         Bukkit.getScheduler().runTask(this.plugin, () -> {
+            if (verified) {
+               player.sendMessage("§a✓ Migration verification passed!");
+               player.sendMessage("§7All data has been successfully migrated to MySQL.");
+            } else {
+               player.sendMessage("§c✗ Migration verification failed!");
+               player.sendMessage("§7Some data may not have been migrated correctly.");
+               player.sendMessage("§7Check the console for detailed information.");
+            }
+         });
+      });
    }
 }

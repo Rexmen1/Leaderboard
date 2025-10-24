@@ -1,10 +1,32 @@
-# Update interval in seconds
+# Update interval in seconds (how often to refresh leaderboard data)
 update-interval: 30
+
+# Storage configuration
+storage:
+  # Storage type: 'yaml' or 'mysql'
+  type: 'yaml'
+  
+  # MySQL database settings (only used when type is 'mysql')
+  mysql:
+    host: 'localhost'
+    port: 3306
+    database: 's12_test_leaderboard'
+    username: 'u12_yb6eDv22cW'
+    password: 'oomSQGDJQRij0w8i!GX!NI3w'
+    # Connection pool settings
+    pool:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+    # Table prefix for leaderboard tables
+    table-prefix: 'lb_'
 
 # Debug settings
 debug:
-  enabled: false
-  log-updates: false
+  enabled: true
+  log-updates: true
   log-texture-cache: false
 
 # Texture Cache Settings
