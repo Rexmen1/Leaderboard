@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import me.clip.placeholderapi.PlaceholderAPI;
 import org.bukkit.Bukkit;
@@ -28,8 +29,10 @@ public class LeaderboardManager {
    private FileConfiguration data;
    private DatabaseManager databaseManager;
    private boolean useMySQL = false;
-   private static final int BATCH_SIZE = 50;
-   private static final long BATCH_DELAY = 20L;
+   
+   // In-memory cache: type -> sorted list of (name, value) pairs
+   // GUI always reads from this cache, never directly from MySQL
+   private final Map<String, List<Entry<String, Double>>> leaderboardCache = new ConcurrentHashMap<>();
 
    public LeaderboardManager(LeaderboardPlugin plugin) {
       this.plugin = plugin;
@@ -62,6 +65,24 @@ public class LeaderboardManager {
       this.loadLeaderboards();
       if (!this.useMySQL) {
          this.loadData();
+      } else {
+         // Pre-populate cache from MySQL so GUI works immediately
+         this.loadCacheFromMySQL();
+      }
+   }
+   
+   /**
+    * Load initial leaderboard data from MySQL into the in-memory cache
+    */
+   private void loadCacheFromMySQL() {
+      for (String type : this.leaderboardPlaceholders.keySet()) {
+         this.databaseManager.getTopPlayers(type, 1000).thenAccept(topPlayersData -> {
+            List<Entry<String, Double>> cached = topPlayersData.stream()
+               .map(pd -> Map.entry((String) pd.get("name"), (Double) pd.get("value")))
+               .collect(Collectors.toList());
+            this.leaderboardCache.put(type, cached);
+            this.debug("Loaded cache for " + type + ": " + cached.size() + " entries");
+         });
       }
    }
 
@@ -124,37 +145,19 @@ public class LeaderboardManager {
 
       String placeholder = this.leaderboardPlaceholders.get(type);
       
-      if (this.useMySQL && this.databaseManager != null) {
-         // MySQL storage
-         this.updateLeaderboardMySQL(type, placeholder, callback);
-      } else {
-         // YAML storage
-         this.updateLeaderboardYAML(type, placeholder, callback);
-      }
-   }
-   
-   private void updateLeaderboardMySQL(String type, String placeholder, UpdateCallback callback) {
-      List<CompletableFuture<Void>> futures = new ArrayList<>();
-      
+      // Collect placeholder values ON THE MAIN THREAD (Bukkit API is not thread-safe)
+      Map<String, double[]> collectedData = new HashMap<>();
       for (Player player : Bukkit.getOnlinePlayers()) {
          try {
             String result = PlaceholderAPI.setPlaceholders(player, placeholder);
             try {
                double value = Double.parseDouble(result);
                if (value > 0.0D) {
-                  CompletableFuture<Void> future = this.databaseManager.updatePlayerData(
-                     player.getUniqueId().toString(), 
-                     player.getName(), 
-                     type, 
-                     value
-                  ).thenAccept(success -> {
-                     if (success) {
-                        this.debug("Updated " + type + " for " + player.getName() + ": " + value);
-                     } else {
-                        this.debug("Failed to update " + type + " for " + player.getName());
-                     }
-                  });
-                  futures.add(future);
+                  collectedData.put(player.getName(), new double[]{value});
+                  // Also store UUID for MySQL
+                  if (this.useMySQL) {
+                     collectedData.put(player.getName(), new double[]{value});
+                  }
                }
             } catch (NumberFormatException e) {
                this.debug("Failed to parse value for " + player.getName() + " with placeholder " + placeholder);
@@ -164,66 +167,66 @@ public class LeaderboardManager {
          }
       }
       
-      // Wait for all updates to complete
+      if (this.useMySQL && this.databaseManager != null) {
+         // Store to MySQL ASYNC with collected data
+         this.updateLeaderboardMySQL(type, collectedData, callback);
+      } else {
+         // YAML storage (already on main thread, fine)
+         this.updateLeaderboardYAML(type, collectedData, callback);
+      }
+   }
+   
+   private void updateLeaderboardMySQL(String type, Map<String, double[]> collectedData, UpdateCallback callback) {
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      
+      for (Player player : Bukkit.getOnlinePlayers()) {
+         double[] valueArr = collectedData.get(player.getName());
+         if (valueArr != null) {
+            double value = valueArr[0];
+            CompletableFuture<Void> future = this.databaseManager.updatePlayerData(
+               player.getUniqueId().toString(), 
+               player.getName(), 
+               type, 
+               value
+            ).thenAccept(success -> {
+               if (success) {
+                  this.debug("Updated " + type + " for " + player.getName() + ": " + value);
+               } else {
+                  this.debug("Failed to update " + type + " for " + player.getName());
+               }
+            });
+            futures.add(future);
+         }
+      }
+      
+      // After all DB writes complete, refresh the cache from MySQL
       CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-         .thenRun(() -> {
+         .thenCompose(v -> this.databaseManager.getTopPlayers(type, 1000))
+         .thenAccept(topPlayersData -> {
+            // Update in-memory cache
+            List<Entry<String, Double>> cached = topPlayersData.stream()
+               .map(pd -> Map.entry((String) pd.get("name"), (Double) pd.get("value")))
+               .collect(Collectors.toList());
+            this.leaderboardCache.put(type, cached);
+            
             if (callback != null) {
                callback.onComplete();
             }
          });
    }
    
-   private void updateLeaderboardYAML(String type, String placeholder, UpdateCallback callback) {
+   private void updateLeaderboardYAML(String type, Map<String, double[]> collectedData, UpdateCallback callback) {
       ConfigurationSection typeSection = this.data.getConfigurationSection(type);
       if (typeSection == null) {
          typeSection = this.data.createSection(type);
       }
 
-      ConfigurationSection finalSection = typeSection;
-      Map<String, Double> existingValues = new HashMap();
-      Iterator var7 = typeSection.getKeys(false).iterator();
-
-      while(var7.hasNext()) {
-         String playerName = (String)var7.next();
-         if (!playerName.equals("last_update")) {
-            existingValues.put(playerName, finalSection.getDouble(playerName));
-         }
+      for (Map.Entry<String, double[]> entry : collectedData.entrySet()) {
+         typeSection.set(entry.getKey(), entry.getValue()[0]);
+         this.debug("Updated " + type + " for " + entry.getKey() + ": " + entry.getValue()[0]);
       }
 
-      Map<String, Double> newValues = new HashMap();
-      Iterator var16 = Bukkit.getOnlinePlayers().iterator();
-
-      while(var16.hasNext()) {
-         Player player = (Player)var16.next();
-
-         String var10001;
-         try {
-            String result = PlaceholderAPI.setPlaceholders(player, placeholder);
-
-            try {
-               double value = Double.parseDouble(result);
-               if (value > 0.0D) {
-                  newValues.put(player.getName(), value);
-                  this.debug("Updated " + type + " for " + player.getName() + ": " + value);
-               }
-            } catch (NumberFormatException var13) {
-               var10001 = player.getName();
-               this.debug("Failed to parse value for " + var10001 + " with placeholder " + placeholder);
-            }
-         } catch (Exception var14) {
-            var10001 = player.getName();
-            this.debug("Error processing stats for " + var10001 + ": " + var14.getMessage());
-         }
-      }
-
-      var16 = newValues.entrySet().iterator();
-
-      while(var16.hasNext()) {
-         Entry<String, Double> entry = (Entry)var16.next();
-         finalSection.set((String)entry.getKey(), entry.getValue());
-      }
-
-      finalSection.set("last_update", System.currentTimeMillis());
+      typeSection.set("last_update", System.currentTimeMillis());
       this.saveData();
       if (callback != null) {
          callback.onComplete();
@@ -247,16 +250,12 @@ public class LeaderboardManager {
 
    public List<Entry<String, Double>> getTopPlayers(String type, int limit) {
       if (this.useMySQL && this.databaseManager != null) {
-         // MySQL storage - return synchronously for compatibility
-         try {
-            List<Map<String, Object>> topPlayersData = this.databaseManager.getTopPlayers(type, limit).get();
-            return topPlayersData.stream()
-               .map(playerData -> Map.entry((String) playerData.get("name"), (Double) playerData.get("value")))
-               .collect(Collectors.toList());
-         } catch (Exception e) {
-            this.plugin.getLogger().severe("Failed to get top players from MySQL: " + e.getMessage());
-            return new ArrayList<>();
+         // Read from in-memory cache — never blocks the main thread
+         List<Entry<String, Double>> cached = this.leaderboardCache.get(type);
+         if (cached != null) {
+            return cached.stream().limit(limit).collect(Collectors.toList());
          }
+         return new ArrayList<>();
       } else {
          // YAML storage
          ConfigurationSection typeSection = this.data.getConfigurationSection(type);

@@ -57,7 +57,9 @@ public class LeaderboardPlugin extends JavaPlugin {
    }
 
    private void startUpdateTask(int intervalSeconds) {
-      this.updateTask = this.getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
+      // Run on MAIN THREAD because PlaceholderAPI.setPlaceholders() requires it.
+      // The LeaderboardManager collects values synchronously then dispatches DB writes async.
+      this.updateTask = this.getServer().getScheduler().runTaskTimer(this, () -> {
          this.leaderboardManager.updateAllLeaderboards((UpdateCallback) null);
       }, 20L, (long) intervalSeconds * 20L);
    }

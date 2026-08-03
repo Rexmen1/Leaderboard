@@ -7,6 +7,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class DatabaseManager {
@@ -14,6 +17,7 @@ public class DatabaseManager {
     private final LeaderboardPlugin plugin;
     private final Logger logger;
     private HikariDataSource dataSource;
+    private ExecutorService dbExecutor;
     private String tablePrefix;
     private boolean isConnected = false;
     
@@ -56,6 +60,11 @@ public class DatabaseManager {
             hikariConfig.setIdleTimeout(config.getLong("storage.mysql.pool.idle-timeout", 600000));
             hikariConfig.setMaxLifetime(config.getLong("storage.mysql.pool.max-lifetime", 1800000));
             
+            // Connection validation and keepalive
+            hikariConfig.setKeepaliveTime(300000); // 5 minutes - sends a keepalive query
+            hikariConfig.setValidationTimeout(5000); // 5 seconds to validate a connection
+            hikariConfig.setConnectionTestQuery("SELECT 1");
+            
             // Additional settings for better performance
             hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
             hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
@@ -63,6 +72,14 @@ public class DatabaseManager {
             hikariConfig.addDataSourceProperty("useServerPrepStmts", "true");
             
             this.dataSource = new HikariDataSource(hikariConfig);
+            
+            // Create dedicated thread pool for database operations
+            int poolSize = config.getInt("storage.mysql.pool.maximum-pool-size", 10);
+            this.dbExecutor = Executors.newFixedThreadPool(Math.min(poolSize, 4), r -> {
+                Thread t = new Thread(r, "Leaderboards-DB");
+                t.setDaemon(true);
+                return t;
+            });
             
             // Test connection
             try (Connection connection = dataSource.getConnection()) {
@@ -287,7 +304,7 @@ public class DatabaseManager {
                 e.printStackTrace();
                 return false;
             }
-        });
+        }, dbExecutor);
     }
     
     /**
@@ -324,7 +341,7 @@ public class DatabaseManager {
             }
             
             return topPlayers;
-        });
+        }, dbExecutor);
     }
     
     /**
@@ -357,7 +374,7 @@ public class DatabaseManager {
             }
             
             return -1;
-        });
+        }, dbExecutor);
     }
     
     /**
@@ -366,13 +383,6 @@ public class DatabaseManager {
     public CompletableFuture<Boolean> registerLeaderboardType(String typeName, String displayTitle, String placeholder, String format) {
         return CompletableFuture.supplyAsync(() -> {
             if (!isConnected) return false;
-            
-            // Log the values being inserted for debugging
-            logger.info("Registering leaderboard type:");
-            logger.info("  Type Name: '" + typeName + "' (length: " + (typeName != null ? typeName.length() : "null") + ")");
-            logger.info("  Display Title: '" + displayTitle + "' (length: " + (displayTitle != null ? displayTitle.length() : "null") + ")");
-            logger.info("  Placeholder: '" + placeholder + "' (length: " + (placeholder != null ? placeholder.length() : "null") + ")");
-            logger.info("  Format: '" + format + "' (length: " + (format != null ? format.length() : "null") + ")");
             
             String sql = "INSERT INTO " + tablePrefix + "leaderboard_types (type_name, display_title, placeholder, format) " +
                         "VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE " +
@@ -396,7 +406,7 @@ public class DatabaseManager {
                 e.printStackTrace();
                 return false;
             }
-        });
+        }, dbExecutor);
     }
     
     /**
@@ -427,18 +437,35 @@ public class DatabaseManager {
             }
             
             return types;
-        });
+        }, dbExecutor);
     }
     
     /**
      * Close the database connection
      */
     public void close() {
+        if (dbExecutor != null) {
+            dbExecutor.shutdown();
+            try {
+                if (!dbExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                    dbExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                dbExecutor.shutdownNow();
+            }
+        }
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
             logger.info("Database connection closed.");
         }
         isConnected = false;
+    }
+    
+    /**
+     * Get the executor service for running async database tasks
+     */
+    public ExecutorService getExecutor() {
+        return dbExecutor;
     }
     
     /**
